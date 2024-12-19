@@ -1,3 +1,6 @@
+%%writefile main.cu
+// #include "finders.h"
+
 #include <string.h>
 #include <stdio.h>
 #include <omp.h>
@@ -3669,6 +3672,89 @@ __device__ static const uint64_t btree20_nodes[] =
     0xFF0287887F525C7F,0xFF0287887F526E7F,0xFF0287887F52787F,
 };
 
+
+typedef struct {
+    int depth;
+    int index;
+} StackFrame;
+
+typedef struct {
+    StackFrame frames[128];
+    size_t pointer;
+} Stack;
+
+__device__ __host__ StackFrame new_frame(int index, int depth) {
+    return (StackFrame){.depth=depth, .index=index};
+}
+
+__device__ __host__ void push(Stack *stack, StackFrame frame) {
+    stack->frames[stack->pointer] = frame;
+    stack->pointer++;
+}
+
+__device__ __host__ StackFrame pop(Stack *stack) {
+    stack->pointer--;
+    return stack->frames[stack->pointer];
+}
+
+__device__ __host__ int get_resulting_node_improved(const uint64_t np[6], const BiomeTree *bt) {
+    Stack stack;
+    stack.pointer = 0;
+    push(&stack, new_frame(0, 0));
+
+    uint64_t best_dist = 18446744073709551615ULL;
+    int best_index = -1;
+
+    int nodes_visted = 0;
+
+    while (stack.pointer > 0) {
+        if (best_dist == 0) {
+            return (btree20_nodes[best_index] >> 8 * 6) & 0xFF;
+        }
+
+        StackFrame frame = pop(&stack);
+        uint64_t node = btree20_nodes[frame.index];
+        nodes_visted++;
+
+        // if the node is a leaf
+        if (((node >> 8 * 7) & 0xFF) == 0xFF) {
+            int dist = get_np_dist(np, bt, frame.index);
+
+            if (dist < best_dist) {
+                best_dist = dist;
+                best_index = frame.index;
+            }
+            continue;
+        }
+
+        // push each child node onto the stack
+        int child_spacing = btree20_steps[frame.depth];
+        int child_index = btree20_nodes[frame.index] >> 48;
+
+        if (child_spacing == 0) {
+            continue;
+        }
+
+        for (size_t i = 0; i < btree20_order; i++, child_index += child_spacing) {
+            uint64_t child_score = get_np_dist(np, bt, child_index);
+            if (child_score > best_dist) {
+                continue; //no need to search the children in this case
+            }
+
+            if (child_spacing != 0) {
+                // if this child has a less score, there is potential to find a better leaf...
+                push(&stack, new_frame(child_index, frame.depth+1));
+            }
+
+            if (child_index > 9112) {
+                break;
+            }
+        }
+
+    }
+    return (btree20_nodes[best_index] >> 8 * 6) & 0xFF;
+}
+
 __device__ static const BiomeTree g_btree[MC_NEWEST - MC_1_18 + 1] =
 {
     // MC_1_20
@@ -3686,13 +3772,7 @@ __host__ __device__ int climateToBiome(int mc, const uint64_t np[6], uint64_t *d
     int idx;
     uint64_t ds = -1;
 
-    if (dat)
-    {
-        alt = (int) *dat;
-        ds = get_np_dist(np, bt, alt);
-    }
-
-    idx = get_resulting_node_new(np, bt);
+    idx = get_resulting_node_improved(np, bt);
     return idx;
 }
 
@@ -4714,22 +4794,25 @@ __global__ void kernel(uint64_t s) {
                 villages++;
             }
             if (villages > best) {
-                goto next;
+                return;
             }
         }
     }
     //printf("%d\n", villages);
     if (villages < best) {
-        printf("Found new best on thread %d: %" PRIi64 " with %d villages\n", 0, seed, villages);
+        printf("Found new best: %" PRIi64 " with %d villages\n", seed, villages);
         best = villages;
     }
-    next:
-        ;
 }
 
-int main()
-{
-  for (uint64_t s = 1; s < 16777216000L; s++) {
+int main(int argc, char **argv) {
+  int block_min = atoi(argv[1]);
+  int block_max = atoi(argv[2]);
+  int device = atoi(argv[3]);
+
+  cudaSetDevice(device);
+
+  for (uint64_t s = (uint64_t)block_min; s < (uint64_t)block_max; s++) {
     kernel<<<32768, 256>>>(32768 * 256 * s);
   }
   cudaDeviceSynchronize();
