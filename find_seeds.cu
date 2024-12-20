@@ -1,9 +1,5 @@
-%%writefile main.cu
-// #include "finders.h"
-
 #include <string.h>
 #include <stdio.h>
-#include <omp.h>
 #include <inttypes.h>
 #include <math.h>
 
@@ -3736,21 +3732,20 @@ __device__ __host__ int get_resulting_node_improved(const uint64_t np[6], const 
         }
 
         for (size_t i = 0; i < btree20_order; i++, child_index += child_spacing) {
-            uint64_t child_score = get_np_dist(np, bt, child_index);
-            if (child_score > best_dist) {
-                continue; //no need to search the children in this case
-            }
+	            uint64_t child_score = get_np_dist(np, bt, child_index);
+	            if (child_score > best_dist) {
+	                continue; //no need to search the children in this case
+	            }
 
-            if (child_spacing != 0) {
-                // if this child has a less score, there is potential to find a better leaf...
-                push(&stack, new_frame(child_index, frame.depth+1));
-            }
+	            if (child_spacing != 0) {
+	                // if this child has a less score, there is potential to find a better leaf...
+	                push(&stack, new_frame(child_index, frame.depth+1));
+	            }
 
-            if (child_index > 9112) {
-                break;
-            }
-        }
-
+	           	//if (child_index > 9112) {
+	             //   break;
+	            //}        		
+		}
     }
     return (btree20_nodes[best_index] >> 8 * 6) & 0xFF;
 }
@@ -4551,37 +4546,19 @@ __host__ __device__ int *allocCache(const Generator *g, Range r)
 __host__ __device__ int getBiomeAt(const Generator *g, int scale, int x, int y, int z)
 {
     Range r = {scale, x, z, 1, 1, y, 1};
-    int *ids = allocCache(g, r);
+    //int *ids = allocCache(g, r);
+    int ids[128];
     int id = genBiomes(g, ids, r);
     if (id == 0)
         id = ids[0];
     else
         id = none;
-    free(ids);
+    // free(ids);
     return id;
 }
 
-__host__ __device__ int isViableFeatureBiome(int mc, int structureType, int biomeID)
-{
-    switch (structureType)
-    {
-    case Village:
-        if (biomeID == plains || biomeID == desert || biomeID == savanna)
-            return 1;
-        if (mc >= MC_1_10 && biomeID == taiga)
-            return 1;
-        if (mc >= MC_1_14 && biomeID == snowy_tundra)
-            return 1;
-        if (mc >= MC_1_18 && biomeID == meadow)
-            return 1;
-        return 0;
-
-    default:
-        printf(
-                "isViableFeatureBiome: not implemented for structure type %d.\n",
-                structureType);
-    }
-    return 0;
+__host__ __device__ int isViableFeatureBiome(int mc, int structureType, int biomeID) {
+    return biomeID == plains || biomeID == desert || biomeID == savanna || biomeID == taiga || biomeID == snowy_taiga || biomeID == meadow;
 }
 
 __host__ __device__ int getVariant(StructureVariant *r, int structType, int mc, uint64_t seed,
@@ -4596,111 +4573,87 @@ __host__ __device__ int getVariant(StructureVariant *r, int structType, int mc, 
     r->biome = -1;
     r->y = 320;
 
-    switch (structType)
+    if (!isViableFeatureBiome(mc, Village, biomeID))
+        return 0;
+
+    r->biome = biomeID;
+    r->rotation = nextInt(&rng, 4);
+    switch (biomeID)
     {
-    case Village:
-        if (mc <= MC_1_9)
-            return 0;
-        if (!isViableFeatureBiome(mc, Village, biomeID))
-            return 0;
-        if (mc <= MC_1_13)
-        {
-            skipNextN(&rng, mc == MC_1_13 ? 10 : 11);
-            r->abandoned = nextInt(&rng, 50) == 0;
-            return 1;
-        }
-        r->biome = biomeID;
-        r->rotation = nextInt(&rng, 4);
-        switch (biomeID)
-        {
-        case meadow:
-            r->biome = plains;
-            // fallthrough
-        case plains:
-            t = nextInt(&rng, 204);
-            if      (t <  50) { r->start = 0; sx =  9; sy = 4; sz =  9; } // plains_fountain_01
-            else if (t < 100) { r->start = 1; sx = 10; sy = 7; sz = 10; } // plains_meeting_point_1
-            else if (t < 150) { r->start = 2; sx =  8; sy = 5; sz = 15; } // plains_meeting_point_2
-            else if (t < 200) { r->start = 3; sx = 11; sy = 9; sz = 11; } // plains_meeting_point_3
-            else if (t < 201) { r->start = 0; sx =  9; sy = 4; sz =  9; r->abandoned = 1; }
-            else if (t < 202) { r->start = 1; sx = 10; sy = 7; sz = 10; r->abandoned = 1; }
-            else if (t < 203) { r->start = 2; sx =  8; sy = 5; sz = 15; r->abandoned = 1; }
-            else if (t < 204) { r->start = 3; sx = 11; sy = 9; sz = 11; r->abandoned = 1; }
-            else UNREACHABLE();
-            break;
-        case desert:
-            t = nextInt(&rng, 250);
-            if      (t <  98) { r->start = 1; sx = 17; sy = 6; sz =  9; } // desert_meeting_point_1
-            else if (t < 196) { r->start = 2; sx = 12; sy = 6; sz = 12; } // desert_meeting_point_2
-            else if (t < 245) { r->start = 3; sx = 15; sy = 6; sz = 15; } // desert_meeting_point_3
-            else if (t < 247) { r->start = 1; sx = 17; sy = 6; sz =  9; r->abandoned = 1; }
-            else if (t < 249) { r->start = 2; sx = 12; sy = 6; sz = 12; r->abandoned = 1; }
-            else if (t < 250) { r->start = 3; sx = 15; sy = 6; sz = 15; r->abandoned = 1; }
-            else UNREACHABLE();
-            break;
-        case savanna:
-            t = nextInt(&rng, 459);
-            if      (t < 100) { r->start = 1; sx = 14; sy = 5; sz = 12; } // savanna_meeting_point_1
-            else if (t < 150) { r->start = 2; sx = 11; sy = 6; sz = 11; } // savanna_meeting_point_2
-            else if (t < 300) { r->start = 3; sx =  9; sy = 6; sz = 11; } // savanna_meeting_point_3
-            else if (t < 450) { r->start = 4; sx =  9; sy = 6; sz =  9; } // savanna_meeting_point_4
-            else if (t < 452) { r->start = 1; sx = 14; sy = 5; sz = 12; r->abandoned = 1; }
-            else if (t < 453) { r->start = 2; sx = 11; sy = 6; sz = 11; r->abandoned = 1; }
-            else if (t < 456) { r->start = 3; sx =  9; sy = 6; sz = 11; r->abandoned = 1; }
-            else if (t < 459) { r->start = 4; sx =  9; sy = 6; sz =  9; r->abandoned = 1; }
-            else UNREACHABLE();
-            break;
-        case taiga:
-            t = nextInt(&rng, 100);
-            if      (t <  49) { r->start = 1; sx = 22; sy = 3; sz = 18; } // taiga_meeting_point_1
-            else if (t <  98) { r->start = 2; sx =  9; sy = 7; sz =  9; } // taiga_meeting_point_2
-            else if (t <  99) { r->start = 1; sx = 22; sy = 3; sz = 18; r->abandoned = 1; }
-            else if (t < 100) { r->start = 2; sx =  9; sy = 7; sz =  9; r->abandoned = 1; }
-            else UNREACHABLE();
-            break;
-        case snowy_tundra:
-            t = nextInt(&rng, 306);
-            if      (t < 100) { r->start = 1; sx = 12; sy = 8; sz =  8; } // snowy_meeting_point_1
-            else if (t < 150) { r->start = 2; sx = 11; sy = 5; sz =  9; } // snowy_meeting_point_2
-            else if (t < 300) { r->start = 3; sx =  7; sy = 7; sz =  7; } // snowy_meeting_point_3
-            else if (t < 302) { r->start = 1; sx = 12; sy = 8; sz =  8; r->abandoned = 1; }
-            else if (t < 303) { r->start = 2; sx = 11; sy = 5; sz =  9; r->abandoned = 1; }
-            else if (t < 306) { r->start = 3; sx =  7; sy = 7; sz =  7; r->abandoned = 1; }
-            else UNREACHABLE();
-            break;
-        default:
-            sx = sy = sz = 0;
-            return 0;
-        }
-        goto L_rotate_village_bastion;
-
-    L_rotate_village_bastion:
-        r->sy = sy;
-        if (mc >= MC_1_18)
-        {
-            switch (r->rotation)
-            { // 0:0, 1:cw90, 2:cw180, 3:cw270=ccw90
-            case 0: r->x = 0;    r->z = 0;    r->sx = sx; r->sz = sz; break;
-            case 1: r->x = 1-sz; r->z = 0;    r->sx = sz; r->sz = sx; break;
-            case 2: r->x = 1-sx; r->z = 1-sz; r->sx = sx; r->sz = sz; break;
-            case 3: r->x = 0;    r->z = 1-sx; r->sx = sz; r->sz = sx; break;
-            }
-        }
-        else
-        {
-            switch (r->rotation)
-            { // 0:0, 1:cw90, 2:cw180, 3:cw270=ccw90
-            case 0: r->x = 0;        r->z = 0;        r->sx = sx; r->sz = sz; break;
-            case 1: r->x = (x<0)-sz; r->z = 0;        r->sx = sz; r->sz = sx; break;
-            case 2: r->x = (x<0)-sx; r->z = (z<0)-sz; r->sx = sx; r->sz = sz; break;
-            case 3: r->x = 0;        r->z = (z<0)-sx; r->sx = sz; r->sz = sx; break;
-            }
-        }
-        return 1;
-
+    case meadow:
+        r->biome = plains;
+        // fallthrough
+    case plains:
+        t = nextInt(&rng, 204);
+        if      (t <  50) { r->start = 0; sx =  9; sy = 4; sz =  9; } // plains_fountain_01
+        else if (t < 100) { r->start = 1; sx = 10; sy = 7; sz = 10; } // plains_meeting_point_1
+        else if (t < 150) { r->start = 2; sx =  8; sy = 5; sz = 15; } // plains_meeting_point_2
+        else if (t < 200) { r->start = 3; sx = 11; sy = 9; sz = 11; } // plains_meeting_point_3
+        else if (t < 201) { r->start = 0; sx =  9; sy = 4; sz =  9; r->abandoned = 1; }
+        else if (t < 202) { r->start = 1; sx = 10; sy = 7; sz = 10; r->abandoned = 1; }
+        else if (t < 203) { r->start = 2; sx =  8; sy = 5; sz = 15; r->abandoned = 1; }
+        else if (t < 204) { r->start = 3; sx = 11; sy = 9; sz = 11; r->abandoned = 1; }
+        else UNREACHABLE();
+        break;
+    case desert:
+        t = nextInt(&rng, 250);
+        if      (t <  98) { r->start = 1; sx = 17; sy = 6; sz =  9; } // desert_meeting_point_1
+        else if (t < 196) { r->start = 2; sx = 12; sy = 6; sz = 12; } // desert_meeting_point_2
+        else if (t < 245) { r->start = 3; sx = 15; sy = 6; sz = 15; } // desert_meeting_point_3
+        else if (t < 247) { r->start = 1; sx = 17; sy = 6; sz =  9; r->abandoned = 1; }
+        else if (t < 249) { r->start = 2; sx = 12; sy = 6; sz = 12; r->abandoned = 1; }
+        else if (t < 250) { r->start = 3; sx = 15; sy = 6; sz = 15; r->abandoned = 1; }
+        else UNREACHABLE();
+        break;
+    case savanna:
+        t = nextInt(&rng, 459);
+        if      (t < 100) { r->start = 1; sx = 14; sy = 5; sz = 12; } // savanna_meeting_point_1
+        else if (t < 150) { r->start = 2; sx = 11; sy = 6; sz = 11; } // savanna_meeting_point_2
+        else if (t < 300) { r->start = 3; sx =  9; sy = 6; sz = 11; } // savanna_meeting_point_3
+        else if (t < 450) { r->start = 4; sx =  9; sy = 6; sz =  9; } // savanna_meeting_point_4
+        else if (t < 452) { r->start = 1; sx = 14; sy = 5; sz = 12; r->abandoned = 1; }
+        else if (t < 453) { r->start = 2; sx = 11; sy = 6; sz = 11; r->abandoned = 1; }
+        else if (t < 456) { r->start = 3; sx =  9; sy = 6; sz = 11; r->abandoned = 1; }
+        else if (t < 459) { r->start = 4; sx =  9; sy = 6; sz =  9; r->abandoned = 1; }
+        else UNREACHABLE();
+        break;
+    case taiga:
+        t = nextInt(&rng, 100);
+        if      (t <  49) { r->start = 1; sx = 22; sy = 3; sz = 18; } // taiga_meeting_point_1
+        else if (t <  98) { r->start = 2; sx =  9; sy = 7; sz =  9; } // taiga_meeting_point_2
+        else if (t <  99) { r->start = 1; sx = 22; sy = 3; sz = 18; r->abandoned = 1; }
+        else if (t < 100) { r->start = 2; sx =  9; sy = 7; sz =  9; r->abandoned = 1; }
+        else UNREACHABLE();
+        break;
+    case snowy_tundra:
+        t = nextInt(&rng, 306);
+        if      (t < 100) { r->start = 1; sx = 12; sy = 8; sz =  8; } // snowy_meeting_point_1
+        else if (t < 150) { r->start = 2; sx = 11; sy = 5; sz =  9; } // snowy_meeting_point_2
+        else if (t < 300) { r->start = 3; sx =  7; sy = 7; sz =  7; } // snowy_meeting_point_3
+        else if (t < 302) { r->start = 1; sx = 12; sy = 8; sz =  8; r->abandoned = 1; }
+        else if (t < 303) { r->start = 2; sx = 11; sy = 5; sz =  9; r->abandoned = 1; }
+        else if (t < 306) { r->start = 3; sx =  7; sy = 7; sz =  7; r->abandoned = 1; }
+        else UNREACHABLE();
+        break;
     default:
+        sx = sy = sz = 0;
         return 0;
     }
+
+    int lookups[4][4] = {
+        {0, 0, sx, sz},
+        {1-sz, 0, sz, sx},
+        {1-sx, 1-sz, sx, sz},
+        {0, 1-sx, sz, sx},
+    };
+    r->sy = sy;
+
+    r->x = lookups[r->rotation][0];
+    r->z = lookups[r->rotation][1];
+    r->sx = lookups[r->rotation][2];
+    r->sz = lookups[r->rotation][3];
+
+    return 1;
 }
 
 __host__ __device__ int isViableStructurePos(int structureType, Generator *g, int x, int z, uint32_t flags)
@@ -4719,56 +4672,30 @@ __host__ __device__ int isViableStructurePos(int structureType, Generator *g, in
 
     // Overworld
 
-    Layer lbiome, lshore, *entry = 0;
-    int data[2] = { structureType, g->mc };
-
     const int vv[] = { plains, desert, savanna, taiga, snowy_tundra };
-    switch (structureType)
-    {
-    case Village:
         // In 1.18 village types are checked separtely...
 
-        size_t i;
-        for (i = 0; i < sizeof(vv)/sizeof(int); i++) {
-            if (flags && flags != (uint32_t) vv[i])
-                continue;
-            StructureVariant sv;
-            getVariant(&sv, Village, g->mc, g->seed, x, z, vv[i]);
-            sampleX = (chunkX*32 + 2*sv.x + sv.sx-1) / 2 >> 2;
-            sampleZ = (chunkZ*32 + 2*sv.z + sv.sz-1) / 2 >> 2;
-            sampleY = 319 >> 2;
-            id = getBiomeAt(g, 0, sampleX, sampleY, sampleZ);
-            if (id == vv[i] || (id == meadow && vv[i] == plains)) {
-                viable = vv[i];
-                goto L_viable;
-            }
+    size_t i;
+    for (i = 0; i < sizeof(vv)/sizeof(int); i++) {
+        StructureVariant sv;
+        getVariant(&sv, Village, g->mc, g->seed, x, z, vv[i]);
+        sampleX = (chunkX*32 + 2*sv.x + sv.sx-1) / 2 >> 2;
+        sampleZ = (chunkZ*32 + 2*sv.z + sv.sz-1) / 2 >> 2;
+        sampleY = 319 >> 2;
+        id = getBiomeAt(g, 0, sampleX, sampleY, sampleZ);
+        if (id == vv[i] || (id == meadow && vv[i] == plains)) {
+            return 1;
         }
-        goto L_not_viable;
-
-    default:
-        printf(
-                "isViableStructurePos: bad structure type %d or dimension %d\n",
-                structureType, g->dim);
-        goto L_not_viable;
     }
-
-L_viable:
-    if (!viable)
-        viable = 1;
-L_not_viable:
-    if (g->mc <= MC_1_17)
-    {
-        g->ls.layers[L_BIOME_256] = lbiome;
-        g->ls.layers[L_SHORE_16] = lshore;
-        g->entry = entry;
-    }
-    return viable;
+    return 0;
 }
 
 __device__ int best = 9999;
+__device__ __managed__ unsigned long long int checked = 0;
 
 __global__ void kernel(uint64_t s) {
     uint64_t input_seed = blockDim.x * blockIdx.x + threadIdx.x + s;
+    atomicAdd(&checked, 1ull);
 
     int structType = Village;
     int mc = MC_1_20;
@@ -4787,23 +4714,26 @@ __global__ void kernel(uint64_t s) {
     //printf("%" PRIu64 "\n", seed);
     applySeed(&g, DIM_OVERWORLD, seed);
     int villages = 0;
+    int i = 0;
+    bool found = false;
     for (int rx = -6; rx < 6; rx++) {
         for (int rz = -6; rz < 6; rz++) {
             Pos p = getFeaturePos(sconf, seed, rx, rz);
-            if (isViableStructurePos(structType, &g, p.x, p.z, 0)) {
-                villages++;
-            }
-            if (villages > best) {
-                return;
-            }
+            found = isViableStructurePos(structType, &g, p.x, p.z, 0);
+
+           	if (found) {
+           		//villages++;
+       			return;
+       		}
         }
     }
     //printf("%d\n", villages);
-    if (villages < best) {
-        printf("Found new best: %" PRIi64 " with %d villages\n", seed, villages);
-        best = villages;
-    }
+    printf("Found new best: %" PRIi64 " %d\n", seed, villages);
 }
+
+#include <time.h>
+#include <unistd.h>
+#include <sys/time.h>
 
 int main(int argc, char **argv) {
   int block_min = atoi(argv[1]);
@@ -4812,8 +4742,29 @@ int main(int argc, char **argv) {
 
   cudaSetDevice(device);
 
+	int blocks = 32768;
+	int threads = 32;
+
+    struct timeval start, end;
+
+    gettimeofday(&start, NULL);
+
+	printf("starting...\n");
   for (uint64_t s = (uint64_t)block_min; s < (uint64_t)block_max; s++) {
-    kernel<<<32768, 256>>>(32768 * 256 * s);
+  	kernel<<<blocks, threads>>>(blocks * threads * s);
   }
   cudaDeviceSynchronize();
+
+    gettimeofday(&end, NULL);
+
+    double time_taken = end.tv_sec + end.tv_usec / 1e6 -
+                        start.tv_sec - start.tv_usec / 1e6; // in seconds
+
+  printf("checked = %" PRIu64 "\n", checked);
+  printf("time taken = %f\n", time_taken);
+
+	double seeds_per_second = checked / time_taken;
+	double speedup = seeds_per_second / 199000;
+	printf("seeds per second: %f\n", seeds_per_second);
+	printf("speedup: %fx\n", speedup);
 }
