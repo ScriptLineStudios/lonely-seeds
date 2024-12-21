@@ -5,5 +5,5 @@ Project development takes place in the following thread: https://discord.com/cha
 # big thanks to the following people
 
 * NelS: For providing invaluable information about the way climate parameters are converted into biomes.
-* meox_: For Helping with optimizations, also pointing out a critical oversight I made.
+* meox_: For helping with optimizations, also pointing out a critical oversight I made.
 * dutchen18: For dedicating GPU power.
